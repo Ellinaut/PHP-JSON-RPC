@@ -30,16 +30,24 @@ composer req ellinaut/json-rpc
 ```php
 <?php
 
-use YourNamespace\Server\RemoteProcedure;
+use Ellinaut\JsonRpc\Server\RemoteProcedure;
+use Ellinaut\JsonRpc\Exception\InvalidParamsException;
 
 class MathAddProcedure implements RemoteProcedure
 {
-    public function execute(array $params, string|int|float|null $id): mixed
+    public function validate(array $params): void
     {
         if (!isset($params['a'], $params['b'])) {
             throw new InvalidParamsException('Missing required parameters: a, b');
         }
         
+        if (!is_numeric($params['a']) || !is_numeric($params['b'])) {
+            throw new InvalidParamsException('Parameters must be numeric');
+        }
+    }
+    
+    public function execute(array $params, string|int|float|null $id): mixed
+    {
         return $params['a'] + $params['b'];
     }
 }
@@ -50,7 +58,7 @@ class MathAddProcedure implements RemoteProcedure
 ```php
 <?php
 
-use YourNamespace\Server\JsonRpcServer;
+use Ellinaut\JsonRpc\Server\JsonRpcServer;
 use Psr\Container\ContainerInterface;
 
 // Assuming you have a PSR-11 container
@@ -79,6 +87,27 @@ curl -X POST http://your-server/endpoint \
     "id": 1
   }'
 ```
+
+### 4. Parameter Validation
+
+The server automatically validates parameters before executing procedures:
+
+```php
+// Valid request - passes validation
+{"jsonrpc": "2.0", "method": "math.add", "params": {"a": 5, "b": 3}, "id": 1}
+// Response: {"jsonrpc": "2.0", "result": 8, "id": 1}
+
+// Invalid request - fails validation
+{"jsonrpc": "2.0", "method": "math.add", "params": {"a": "invalid"}, "id": 1}
+// Response: {"jsonrpc": "2.0", "error": {"code": -32602, "message": "Parameters must be numeric"}, "id": 1}
+```
+
+**Validation Features:**
+- **Pre-execution validation**: `validate()` method is called before `execute()`
+- **Exception-based**: Throw `InvalidParamsException` for validation errors
+- **Automatic error responses**: Validation failures return proper JSON-RPC error responses
+- **Batch support**: Each request in a batch is validated independently
+- **Notification handling**: Validation errors in notifications still return error responses
 
 ## Client Usage
 
@@ -177,8 +206,8 @@ docker-compose run --rm php vendor/bin/phpunit --coverage-html coverage/
 ### Core Components
 
 #### Server Components
-- **JsonRpcServer**: Main server handling requests and routing to procedures
-- **RemoteProcedure**: Interface for implementing RPC methods
+- **JsonRpcServer**: Main server handling requests, parameter validation, and routing to procedures
+- **RemoteProcedure**: Interface for implementing RPC methods with validation and execution
 
 #### Client Components  
 - **JsonRpcClient**: Client for making JSON-RPC requests with Generator-based batch support
@@ -221,8 +250,17 @@ The client supports different transport mechanisms through the `TransportInterfa
 - **Mock Transport**: For testing
 - **Custom Transports**: Implement your own transport layer
 
+#### Parameter Validation
+The server provides built-in parameter validation:
+
+- **Two-phase execution**: `validate()` called before `execute()` for each procedure
+- **Early validation**: Parameters are validated before any business logic execution
+- **Consistent error handling**: Validation exceptions automatically converted to JSON-RPC error responses
+- **Batch validation**: Each request in a batch is validated independently
+
 #### Error Handling
 Both client and server provide comprehensive error handling:
 
 - **Server**: Catches exceptions and converts them to JSON-RPC error responses
 - **Client**: Wraps transport errors in `JsonRcpException` for consistent error handling
+- **Validation errors**: `InvalidParamsException` thrown from `validate()` method returns proper error responses
