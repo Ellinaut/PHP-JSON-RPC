@@ -1,0 +1,30 @@
+{
+  "name": "ellinaut/json-rpc",
+  "version": "1.0.0",
+  "description": "Simple JSON-RPC implementation",
+  "type": "library",
+  "require": {
+    "php": "^8.4",
+    "psr/container": "^2.0"
+  },
+  "license": "MIT",
+  "autoload": {
+    "psr-4": {
+      "Ellinaut\\JsonRpc\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Ellinaut\\JsonRpc\\Tests\\": "tests/"
+    }
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^11.5"
+  },
+  "authors": [
+    {
+      "name": "Philipp Marien"
+    }
+  ],
+  "minimum-stability": "stable"
+}
