@@ -35,7 +35,7 @@ readonly class JsonRpcServer
             }
 
             if (!is_array($data) || count($data) === 0) {
-                throw new InvalidRequestException('Invalid request');
+                throw new InvalidRequestException(message: 'Invalid request');
             }
 
             if (isset($data[0])) {
@@ -67,15 +67,18 @@ readonly class JsonRpcServer
             $id = $request->id;
 
             if (!$this->procedureRegister->has($request->method)) {
-                throw new InvalidMethodException('Invalid method: ' . $request->method);
+                throw new InvalidMethodException(message: 'Invalid method: ' . $request->method);
             }
 
             $procedure = $this->procedureRegister->get($request->method);
             if (!$procedure instanceof RemoteProcedure) {
-                throw new InvalidMethodException('Invalid method: ' . $request->method);
+                throw new InvalidMethodException(message: 'Invalid method: ' . $request->method);
             }
 
-            $result = $procedure->execute($request->params ?? [], $request->id);
+            $result = $procedure->execute(
+                params: $request->params ?? [],
+                id: $request->id
+            );
 
             if (!$request->id) {
                 return null; // No response for notifications
@@ -83,11 +86,14 @@ readonly class JsonRpcServer
 
             return new Response($result, $request->id);
         } catch (JsonRcpException $exception) {
-            return $this->createErrorResponse($exception, $id ?? $data['id'] ?? null);
+            return $this->createErrorResponse(
+                exception: $exception,
+                id: $id ?? $data['id'] ?? null
+            );
         } catch (Throwable $exception) {
             return $this->createErrorResponse(
-                new JsonRcpException($exception->getMessage(), $exception->getCode()),
-                $id ?? $data['id'] ?? null
+                exception: new JsonRcpException($exception->getMessage(), $exception->getCode()),
+                id: $id ?? $data['id'] ?? null
             );
         }
     }
@@ -95,12 +101,12 @@ readonly class JsonRpcServer
     protected function createErrorResponse(JsonRcpException $exception, string|float|int|null $id = null): Response
     {
         return new Response(
-            new Error(
+            data: new Error(
                 code: $exception->getCode(),
                 message: $exception->getMessage(),
                 data: $exception->data
             ),
-            $id
+            id: $id
         );
     }
 }

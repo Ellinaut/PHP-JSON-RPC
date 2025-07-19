@@ -39,7 +39,11 @@ readonly class Request implements JsonSerializable
             throw new InvalidRequestException('Id must be a string, integer, float, or omitted');
         }
 
-        return new static($data['method'], $data['params'] ?? null, $data['id'] ?? null);
+        return new static(
+            method: $data['method'],
+            params: $data['params'] ?? null,
+            id: $data['id'] ?? null
+        );
     }
 
     public function jsonSerialize(): array

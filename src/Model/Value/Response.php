@@ -51,7 +51,10 @@ readonly class Response implements JsonSerializable
             );
         }
 
-        return new static($error ?? $data['result'], $data['id']);
+        return new static(
+            data: $error ?? $data['result'],
+            id: $data['id']
+        );
     }
 
     public function jsonSerialize(): array
