@@ -61,10 +61,8 @@ readonly class JsonRpcServer
 
     protected function executeProcedure(array $data): ?Response
     {
-        $id = null;
         try {
             $request = Request::fromArray($data);
-            $id = $request->id;
 
             if (!$this->procedureRegister->has($request->method)) {
                 throw new InvalidMethodException(message: 'Invalid method: ' . $request->method);
@@ -74,6 +72,8 @@ readonly class JsonRpcServer
             if (!$procedure instanceof RemoteProcedure) {
                 throw new InvalidMethodException(message: 'Invalid method: ' . $request->method);
             }
+
+            $procedure->validate(params: $request->params ?? []);
 
             $result = $procedure->execute(
                 params: $request->params ?? [],
@@ -88,12 +88,12 @@ readonly class JsonRpcServer
         } catch (JsonRcpException $exception) {
             return $this->createErrorResponse(
                 exception: $exception,
-                id: $id ?? $data['id'] ?? null
+                id: $data['id'] ?? null
             );
         } catch (Throwable $exception) {
             return $this->createErrorResponse(
                 exception: new JsonRcpException($exception->getMessage(), $exception->getCode()),
-                id: $id ?? $data['id'] ?? null
+                id: $data['id'] ?? null
             );
         }
     }

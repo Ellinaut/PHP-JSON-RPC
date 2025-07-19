@@ -13,11 +13,25 @@ class RemoteProcedureMock implements RemoteProcedure
 {
     private mixed $result;
     private ?\Throwable $exception = null;
+    private ?\Throwable $validationException = null;
     private array $executionHistory = [];
+    private array $validationHistory = [];
 
     public function __construct(mixed $result = null)
     {
         $this->result = $result;
+    }
+
+    public function validate(array $params): void
+    {
+        // Store validation history for assertions
+        $this->validationHistory[] = [
+            'params' => $params
+        ];
+
+        if ($this->validationException !== null) {
+            throw $this->validationException;
+        }
     }
 
     public function execute(array $params, string|int|float|null $id): mixed
@@ -52,6 +66,14 @@ class RemoteProcedureMock implements RemoteProcedure
     }
 
     /**
+     * Set an exception to be thrown by validate()
+     */
+    public function setValidationException(\Throwable $exception): void
+    {
+        $this->validationException = $exception;
+    }
+
+    /**
      * Get the history of execute() calls
      */
     public function getExecutionHistory(): array
@@ -73,6 +95,7 @@ class RemoteProcedureMock implements RemoteProcedure
     public function resetHistory(): void
     {
         $this->executionHistory = [];
+        $this->validationHistory = [];
     }
 
     /**
@@ -95,5 +118,42 @@ class RemoteProcedureMock implements RemoteProcedure
     public function getCallCount(): int
     {
         return count($this->executionHistory);
+    }
+
+    /**
+     * Get the history of validate() calls
+     */
+    public function getValidationHistory(): array
+    {
+        return $this->validationHistory;
+    }
+
+    /**
+     * Get the last validation call
+     */
+    public function getLastValidation(): ?array
+    {
+        return end($this->validationHistory) ?: null;
+    }
+
+    /**
+     * Check if validate was called with specific params
+     */
+    public function wasValidatedWith(array $params): bool
+    {
+        foreach ($this->validationHistory as $validation) {
+            if ($validation['params'] === $params) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Get the number of times validate was called
+     */
+    public function getValidationCallCount(): int
+    {
+        return count($this->validationHistory);
     }
 }

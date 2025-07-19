@@ -388,4 +388,220 @@ class JsonRpcServerTest extends TestCase
             $response
         );
     }
+
+    /**
+     * Test that validate method is called before execute
+     */
+    public function testValidateMethodIsCalledBeforeExecute(): void
+    {
+        $procedure = new RemoteProcedureMock('success');
+
+        $this->container->expects($this->once())
+            ->method('has')
+            ->with('test.method')
+            ->willReturn(true);
+
+        $this->container->expects($this->once())
+            ->method('get')
+            ->with('test.method')
+            ->willReturn($procedure);
+
+        $request = '{"jsonrpc": "2.0", "method": "test.method", "params": {"a": 1, "b": 2}, "id": 1}';
+        $response = $this->server->handle($request);
+
+        // Verify validate was called with correct params
+        $this->assertEquals(1, $procedure->getValidationCallCount());
+        $this->assertTrue($procedure->wasValidatedWith(['a' => 1, 'b' => 2]));
+
+        // Verify execute was still called
+        $this->assertEquals(1, $procedure->getCallCount());
+        $this->assertTrue($procedure->wasCalledWith(['a' => 1, 'b' => 2], 1));
+
+        // Verify successful response
+        $this->assertJsonStringEqualsJsonString(
+            '{"jsonrpc": "2.0", "result": "success", "id": 1}',
+            $response
+        );
+    }
+
+    /**
+     * Test validation with empty params
+     */
+    public function testValidateWithEmptyParams(): void
+    {
+        $procedure = new RemoteProcedureMock('result');
+
+        $this->container->expects($this->once())
+            ->method('has')
+            ->with('test.method')
+            ->willReturn(true);
+
+        $this->container->expects($this->once())
+            ->method('get')
+            ->with('test.method')
+            ->willReturn($procedure);
+
+        $request = '{"jsonrpc": "2.0", "method": "test.method", "id": 1}';
+        $response = $this->server->handle($request);
+
+        // Verify validate was called with empty array for missing params
+        $this->assertTrue($procedure->wasValidatedWith([]));
+        $this->assertTrue($procedure->wasCalledWith([], 1));
+    }
+
+    /**
+     * Test that validation exception prevents execution
+     */
+    public function testValidationExceptionPreventsExecution(): void
+    {
+        $procedure = new RemoteProcedureMock('should_not_be_returned');
+        $procedure->setValidationException(new InvalidParamsException('Invalid parameters'));
+
+        $this->container->expects($this->once())
+            ->method('has')
+            ->with('test.method')
+            ->willReturn(true);
+
+        $this->container->expects($this->once())
+            ->method('get')
+            ->with('test.method')
+            ->willReturn($procedure);
+
+        $request = '{"jsonrpc": "2.0", "method": "test.method", "params": {"invalid": "params"}, "id": 1}';
+        $response = $this->server->handle($request);
+
+        // Verify validate was called
+        $this->assertEquals(1, $procedure->getValidationCallCount());
+        $this->assertTrue($procedure->wasValidatedWith(['invalid' => 'params']));
+
+        // Verify execute was NOT called due to validation failure
+        $this->assertEquals(0, $procedure->getCallCount());
+
+        // Verify error response
+        $result = json_decode($response, true);
+        $this->assertEquals('2.0', $result['jsonrpc']);
+        $this->assertEquals(-32602, $result['error']['code']);
+        $this->assertEquals('Invalid parameters', $result['error']['message']);
+        $this->assertEquals(1, $result['id']);
+    }
+
+    /**
+     * Test validation in batch requests
+     */
+    public function testValidationInBatchRequests(): void
+    {
+        $procedure1 = new RemoteProcedureMock('result1');
+        $procedure2 = new RemoteProcedureMock('result2');
+        $procedure2->setValidationException(new InvalidParamsException('Bad params'));
+
+        $this->container->expects($this->exactly(2))
+            ->method('has')
+            ->willReturnCallback(fn($method) => in_array($method, ['method1', 'method2']));
+
+        $this->container->expects($this->exactly(2))
+            ->method('get')
+            ->willReturnCallback(function($method) use ($procedure1, $procedure2) {
+                return match($method) {
+                    'method1' => $procedure1,
+                    'method2' => $procedure2,
+                };
+            });
+
+        $request = '[
+            {"jsonrpc": "2.0", "method": "method1", "params": {"a": 1}, "id": 1},
+            {"jsonrpc": "2.0", "method": "method2", "params": {"b": 2}, "id": 2}
+        ]';
+        $response = $this->server->handle($request);
+
+        // Verify both procedures were validated
+        $this->assertEquals(1, $procedure1->getValidationCallCount());
+        $this->assertEquals(1, $procedure2->getValidationCallCount());
+        $this->assertTrue($procedure1->wasValidatedWith(['a' => 1]));
+        $this->assertTrue($procedure2->wasValidatedWith(['b' => 2]));
+
+        // Verify only procedure1 was executed (procedure2 failed validation)
+        $this->assertEquals(1, $procedure1->getCallCount());
+        $this->assertEquals(0, $procedure2->getCallCount());
+
+        // Verify batch response
+        $result = json_decode($response, true);
+        $this->assertCount(2, $result);
+        
+        // First response should be successful
+        $this->assertEquals('result1', $result[0]['result']);
+        $this->assertEquals(1, $result[0]['id']);
+        
+        // Second response should be error
+        $this->assertEquals(-32602, $result[1]['error']['code']);
+        $this->assertEquals('Bad params', $result[1]['error']['message']);
+        $this->assertEquals(2, $result[1]['id']);
+    }
+
+    /**
+     * Test validation for notifications with validation error
+     */
+    public function testValidationForNotificationsWithError(): void
+    {
+        $procedure = new RemoteProcedureMock('result');
+        $procedure->setValidationException(new InvalidParamsException('Validation failed'));
+
+        $this->container->expects($this->once())
+            ->method('has')
+            ->with('notification')
+            ->willReturn(true);
+
+        $this->container->expects($this->once())
+            ->method('get')
+            ->with('notification')
+            ->willReturn($procedure);
+
+        $request = '{"jsonrpc": "2.0", "method": "notification", "params": {"test": "data"}}';
+        $response = $this->server->handle($request);
+
+        // Verify validate was called
+        $this->assertEquals(1, $procedure->getValidationCallCount());
+        $this->assertTrue($procedure->wasValidatedWith(['test' => 'data']));
+
+        // Verify execute was NOT called due to validation failure
+        $this->assertEquals(0, $procedure->getCallCount());
+
+        // For notifications with validation errors, an error response is still returned
+        $result = json_decode($response, true);
+        $this->assertEquals('2.0', $result['jsonrpc']);
+        $this->assertEquals(-32602, $result['error']['code']);
+        $this->assertEquals('Validation failed', $result['error']['message']);
+        $this->assertNull($result['id']);
+    }
+
+    /**
+     * Test validation for successful notifications (no response expected)
+     */
+    public function testValidationForSuccessfulNotifications(): void
+    {
+        $procedure = new RemoteProcedureMock('result');
+
+        $this->container->expects($this->once())
+            ->method('has')
+            ->with('notification')
+            ->willReturn(true);
+
+        $this->container->expects($this->once())
+            ->method('get')
+            ->with('notification')
+            ->willReturn($procedure);
+
+        $request = '{"jsonrpc": "2.0", "method": "notification", "params": {"test": "data"}}';
+        $response = $this->server->handle($request);
+
+        // Verify validate was called
+        $this->assertEquals(1, $procedure->getValidationCallCount());
+        $this->assertTrue($procedure->wasValidatedWith(['test' => 'data']));
+
+        // Verify execute was called
+        $this->assertEquals(1, $procedure->getCallCount());
+        $this->assertTrue($procedure->wasCalledWith(['test' => 'data'], null));
+
+        // For successful notifications, no response should be returned
+        $this->assertEmpty($response);
+    }
 }
